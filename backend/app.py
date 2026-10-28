@@ -131,19 +131,37 @@ class SensorAPIHandler(BaseHTTPRequestHandler):
             if "limit" in query_params:
                 raw_limit = query_params["limit"][0]
                 if raw_limit.isdigit():
-                    limit = max(1, min(100, int(raw_limit)))
+                    limit = max(1, min(1000, int(raw_limit)))
+
+            device_filter = None
+            if "device_id" in query_params:
+                raw_dev = query_params["device_id"][0].strip()
+                if raw_dev and raw_dev.upper() != "ALL":
+                    device_filter = raw_dev
 
             with get_db_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute(
-                    """
-                    SELECT id, timestamp, device_id, location, temperature, humidity, status, note
-                    FROM sensor_logs
-                    ORDER BY id DESC
-                    LIMIT ?;
-                    """,
-                    (limit,),
-                )
+                if device_filter:
+                    cursor.execute(
+                        """
+                        SELECT id, timestamp, device_id, location, temperature, humidity, status, note
+                        FROM sensor_logs
+                        WHERE device_id = ?
+                        ORDER BY id DESC
+                        LIMIT ?;
+                        """,
+                        (device_filter, limit),
+                    )
+                else:
+                    cursor.execute(
+                        """
+                        SELECT id, timestamp, device_id, location, temperature, humidity, status, note
+                        FROM sensor_logs
+                        ORDER BY id DESC
+                        LIMIT ?;
+                        """,
+                        (limit,),
+                    )
                 rows = cursor.fetchall()
                 logs = [dict(row) for row in rows]
 
