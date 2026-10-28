@@ -1,29 +1,36 @@
 #!/bin/bash
 # ==============================================================================
 # Script สำหรับติดตั้งและรันบน Container rpi-lab (Debian Trixie) ตามคู่มือ LAB 11-12
-# ใช้สำหรับนักศึกษาที่รันผ่านคำสั่ง: docker start -ai rpi-lab
+# รองรับทั้งรันด้วย root และ piuser
 # ==============================================================================
 
 set -e
 
+# ตรวจสอบการใช้ sudo
+if [ "$(id -u)" -eq 0 ]; then
+    SUDO=""
+else
+    SUDO="sudo"
+fi
+
 echo "=== [LAB Setup] เริ่มต้นติดตั้งและตั้งค่าระบบใน rpi-lab ==="
 
-# ตรวจสอบสิทธิ์และการติดตั้งเครื่องมือ
+# 1. ติดตั้ง Packages
 echo "[1/6] ติดตั้ง Packages ที่จำเป็น..."
-sudo apt-get update
-sudo apt-get install -y sqlite3 python3 curl nginx procps tzdata
+$SUDO apt-get update
+$SUDO apt-get install -y sqlite3 python3 curl nginx procps tzdata
 
-# ตั้งค่า Timezone เป็นประเทศไทย
+# 2. ตั้งค่า Timezone
 echo "[2/6] ตั้งค่า Timezone Asia/Bangkok..."
-sudo ln -snf /usr/share/zoneinfo/Asia/Bangkok /etc/localtime
-echo "Asia/Bangkok" | sudo tee /etc/timezone
+$SUDO ln -snf /usr/share/zoneinfo/Asia/Bangkok /etc/localtime
+echo "Asia/Bangkok" | $SUDO tee /etc/timezone
 
-# สร้างไดเรกทอรี
+# 3. สร้างไดเรกทอรี
 echo "[3/6] สร้างโฟลเดอร์สำหรับ Data และ Web Service..."
 mkdir -p "$HOME/iot-data"
 mkdir -p "$HOME/iot-web"
 
-# คัดลอกไฟล์โปรแกรม Python
+# 4. คัดลอกไฟล์โปรแกรม
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
@@ -32,22 +39,21 @@ cp "$PROJECT_ROOT/backend/app.py" "$HOME/iot-web/app.py"
 cp "$PROJECT_ROOT/backend/generator.py" "$HOME/iot-web/generator.py"
 chmod +x "$HOME/iot-web/"*.py
 
-# คัดลอกหน้าเว็บ Frontend ไปยัง /var/www/html/
+# 5. คัดลอกหน้าเว็บ Frontend
 echo "[5/6] ติดตั้งหน้าเว็บ Dashboard ไปที่ /var/www/html/..."
-sudo mkdir -p /var/www/html
-sudo cp "$PROJECT_ROOT/nginx/html/"* /var/www/html/
-sudo cp "$PROJECT_ROOT/nginx/default.conf" /etc/nginx/sites-available/default
-sudo ln -sf /etc/nginx/sites-available/default /etc/nginx/sites-enabled/default
+$SUDO mkdir -p /var/www/html
+$SUDO cp -r "$PROJECT_ROOT/nginx/html/"* /var/www/html/
+$SUDO cp "$PROJECT_ROOT/nginx/default.conf" /etc/nginx/sites-available/default
+$SUDO ln -sf /etc/nginx/sites-available/default /etc/nginx/sites-enabled/default
 
-# ตรวจสอบและเริ่ม Nginx
+# 6. เริ่มต้น Nginx
 echo "[6/6] เริ่มการทำงานของ Nginx..."
-sudo nginx -t
-sudo nginx -s reload 2>/dev/null || (pgrep nginx || sudo nginx)
+$SUDO nginx -t
+$SUDO nginx -s reload 2>/dev/null || (pgrep nginx >/dev/null || $SUDO nginx)
 
-# รัน Python API และ Generator ในแบบ Background
+# รัน Background Services
 echo "=== เริ่มการทำงานของ Background Services ==="
 
-# หยุด service เดิมหากมีค้างอยู่
 if [ -f "$HOME/iot-web/api.pid" ]; then
     kill "$(cat "$HOME/iot-web/api.pid")" 2>/dev/null || true
 fi
@@ -62,7 +68,7 @@ API_PID=$!
 echo "$API_PID" > "$HOME/iot-web/api.pid"
 echo "-> Python API รันแล้ว (PID: $API_PID) บันทึก log ที่: $HOME/iot-web/api.log"
 
-# รัน Generator สุ่มข้อมูลทุก 3 วินาที
+# รัน Generator
 nohup python3 -u "$HOME/iot-web/generator.py" >> "$HOME/iot-web/generator.log" 2>&1 < /dev/null &
 GEN_PID=$!
 echo "$GEN_PID" > "$HOME/iot-web/generator.pid"
